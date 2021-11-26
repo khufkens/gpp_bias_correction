@@ -4,7 +4,17 @@
 library(tidyverse)
 library(GenSA)
 source("R/frost_hardiness.R")
-source("R/temperature_response.R")
+
+# read in data
+df <- readRDS("data/model_data.rds") %>%
+  mutate(
+    year = format(date, "%Y")
+  ) %>%
+  filter(
+    sitename == "US-NR1",
+    date > "2012-01-01"
+  ) %>%
+  na.omit()
 
 # literature values of the
 # frost hardiness function
@@ -13,39 +23,59 @@ par <- c(
   b = -21.5,
   T8 = 11.3,
   t = 5,
-  Topt = 21,
-  Tmin = 0,
-  a1 = 1,
-  b1 = 2,
-  T9 = -50
-)
-
-demo <- frost_hardiness(
-  temp,
-  par,
-  plot = TRUE
+  base_t = -25
 )
 
 # optimize model parameters using the
 # Generalized Simulated Annealing algorithm
-par= c(a,b,T8,t,a1,b1,T9)
-lower=c(-100,-100,-100,1,-100,-100,-100)
-upper=c(100,100,100,60,100,100,-10)
+lower=c(0,-100,-100,1, -100)
+upper=c(100,0,100,60, 0)
 
 # run model and compare to true values
 # returns the RMSE
-cost <- function(data,par){
-  model = lagged.temperature(data$T,par)
-  RMSE = sqrt(sum((data$Amax - model)^2,na.rm = TRUE)/length(model))
-  return(RMSE)
+cost <- function(
+  data,
+  par
+  ) {
+
+  scaling_factor <- data %>%
+    group_by(sitename) %>%
+    do({
+      scaling_factor <- frost_hardiness(
+        .$temp,
+        par
+      )
+
+      data.frame(
+        sitename = .$sitename,
+        date = .$date,
+        scaling_factor = scaling_factor
+      )
+    })
+
+  df <- left_join(df, scaling_factor)
+
+  rmse <- sqrt(
+    sum(
+      (df$gpp - df$gpp_mod * df$scaling_factor)^2)
+    )/nrow(df)
+
+  # This visualizes the process,
+  # comment out when running for real
+  plot(df$gpp, type = 'l')
+  lines(df$gpp_mod, col = "red")
+  lines(df$gpp_mod * df$scaling_factor, col = "blue")
+  Sys.sleep(0.1)
+
+  return(rmse)
 }
 
 # optimize stuff
 optim_par <- GenSA::GenSA(
   par = par,
   fn = cost,
-  data = data,
+  data = df,
   lower = lower,
   upper = upper,
-  control = list(max.call=10000))$par
+  control = list(max.call=100))$par
 

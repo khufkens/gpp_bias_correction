@@ -7,7 +7,6 @@ source("R/frost_hardiness.R")
 source("R/temperature_response.R")
 
 # read in data
-# read in data
 df <- readRDS("data/model_data.rds") %>%
   mutate(
     year = format(date, "%Y")
